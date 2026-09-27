@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python 引擎
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: 跑引擎测试
+        working-directory: engine
+        run: python -m unittest discover -s tests -v
+      - name: 数据层自检（不自我触发 + 不动点 + 非空）
+        run: python engine/psnb/cli.py evolve --self-check
+      - name: 条令体积
+        run: python engine/psnb/cli.py doctrine --sizes
+      - name: 自进化闭环演示
+        run: python bin/evolve-demo.py
+      - name: 端到端演示
+        run: sh bin/demo.sh > /dev/null
+
+  typescript:
+    name: Pi 插件
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: node scripts/sync-data.mjs
+      - run: npx tsc -p tsconfig.json
+      - run: node --test dist/tests/*.test.js
