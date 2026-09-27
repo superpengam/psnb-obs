@@ -9,7 +9,7 @@
   probe     探针矩阵（模型 × 挡位 × A/B/C 组）
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = ["sanitize", "wording", "doctrine", "score", "escalate", "probe", "data_path"]
 
 from pathlib import Path

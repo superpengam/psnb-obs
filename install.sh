@@ -37,17 +37,34 @@ install_skill() {
 	mkdir -p "$dest"
 	cp "$ROOT/skill/SKILL.md" "$dest/SKILL.md"
 
-	# 附带 data/ 与 engine/ 的只读副本，让技能在被安装到的位置也能跑
+	# 附带 data/ + engine/ + bin/ 副本，让技能在安装位置也能独立运行
 	if have python3; then
-		rm -rf "$dest/data" "$dest/engine"
+		rm -rf "$dest/data" "$dest/engine" "$dest/bin"
 		mkdir -p "$dest/data"
 		cp -r "$ROOT/data/." "$dest/data/"
+		# 实测产物不入技能（含真实模型响应）
+		rm -rf "$dest/data/learned_ops.json.bak"* 2>/dev/null
 		mkdir -p "$dest/engine"
 		cp -r "$ROOT/engine/psnb" "$dest/engine/psnb"
 		cp -r "$ROOT/engine/tests" "$dest/engine/tests"
+		find "$dest/engine" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null
+
+		# 便捷入口：$PSNB/psnb <子命令>
+		mkdir -p "$dest/bin"
+		cat > "$dest/psnb" <<'WRAP'
+#!/bin/sh
+# psnb-obs 便捷入口 —— 等价于 python3 engine/psnb/cli.py
+exec python3 "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/engine/psnb/cli.py" "$@"
+WRAP
+		chmod +x "$dest/psnb"
+		cp "$ROOT/bin/evolve-demo.py" "$dest/bin/" 2>/dev/null
+		cp "$ROOT/bin/demo.sh" "$dest/bin/" 2>/dev/null
+		chmod +x "$dest/bin/"* 2>/dev/null
 	fi
 
-	say "[ok] 技能已安装: $dest/SKILL.md"
+	say "[ok] 技能已安装: $dest"
+	say "     入口: $dest/psnb <子命令>"
+	say "     自检: $dest/psnb evolve --self-check"
 }
 
 # ------------------------------------------------------------------ Pi 插件

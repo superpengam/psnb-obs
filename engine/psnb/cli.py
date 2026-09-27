@@ -554,7 +554,7 @@ def cmd_probe(a: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="psnb", description="psnb-obs 破甲引擎")
-    p.add_argument("--version", action="version", version="psnb-obs 1.0.0")
+    p.add_argument("--version", action="version", version="psnb-obs 1.1.0")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("sanitize", help="出站指纹清洗")
