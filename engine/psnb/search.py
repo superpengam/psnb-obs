@@ -240,3 +240,115 @@ class RecipeBook:
             ops = " → ".join(v.get("ops") or []) or "(基线)"
             lines.append(f" {tag} {k:<28} ASR {v.get('asr',0):.2f} ({v.get('delta',0):+.2f})  {ops}")
         return "\n".join(lines)
+
+
+# --------------------------------------------------------------------- 多轮搜索
+
+
+@dataclass
+class TurnRecipe:
+    """多轮配方 —— 剧本 + 目标轮上叠加的算子。"""
+    model: str
+    family: str
+    script: str
+    ops: list[str]
+    final_asr: float
+    per_script: list[tuple[str, float]] = field(default_factory=list)
+    trials: int = 0
+    seconds: float = 0.0
+    date: str = ""
+
+    def render(self) -> str:
+        lines = [
+            f"多轮配方 · {self.model}（{self.family}）",
+            f"剧本：{self.script}　目标轮算子：{' → '.join(self.ops) if self.ops else '(无)'}",
+            f"最终 ASR {self.final_asr:.2f}　{self.trials} 次调用 / {self.seconds:.1f}s",
+        ]
+        if self.per_script:
+            lines.append("剧本排行：" + "、".join(f"{s} {a:.2f}" for s, a in self.per_script))
+        return "\n".join(lines)
+
+
+class MultiTurnSearcher:
+    """多轮 + 搜索的组合：先选剧本，再在目标轮上搜算子。
+
+    分两段（省预算）：
+      1. 四个剧本各跑一遍（不加算子）→ 拿到剧本排行
+      2. 只对最优剧本的目标轮做算子叠加搜索
+
+    为什么不直接组合搜：每个剧本跑一次是 3-5 次调用，
+    4 剧本 × 4 算子变体 = 16 次剧本运行 = 64+ 次调用，预算吃不消。
+    """
+
+    def __init__(self, probe: str,
+                 chat_fn: Callable[[list[dict]], tuple[str, str | None]],
+                 *,
+                 model: str = "", profile: ModelProfile | None = None,
+                 scripts: list[str] | None = None,
+                 budget: int = 60, top_ops: int = 3, allow_risky: bool = False):
+        from . import multiturn as MT
+
+        self.probe = probe
+        self.chat_fn = chat_fn
+        self.model = model
+        self.profile = profile or detect(model)
+        self.scripts = scripts or list(MT.SCRIPTS)
+        self.budget = budget
+        self.top_ops = top_ops
+        self.calls = 0
+        self.t0 = time.time()
+
+        all_ops = list(mutate.OPS)
+        keep, dropped = filter_ops(all_ops, self.profile)
+        if not allow_risky:
+            keep = [o for o in keep if not mutate.OPS[o].risky]
+        self.ops = keep
+        self.dropped = dropped
+
+    def _run_script(self, name: str, ops: list[str] | None = None) -> float:
+        """跑一个剧本，返回目标轮的 ASR。ops 只叠加在目标轮上。"""
+        from . import multiturn as MT
+
+        script = MT.build(name, self.probe)
+        if ops:
+            for t in script.turns:
+                if t.is_target:
+                    t.content = mutate.apply_ops(t.content, ops)
+        res = MT.run(script, self.chat_fn)
+        self.calls += len(script.user_turns)
+        return res.final_asr
+
+    def run(self) -> TurnRecipe:
+        # 1) 剧本扫描
+        per: list[tuple[str, float]] = []
+        for name in self.scripts:
+            if self.calls >= self.budget:
+                break
+            try:
+                per.append((name, self._run_script(name)))
+            except Exception:  # noqa: BLE001
+                continue
+        per.sort(key=lambda x: -x[1])
+
+        best_script = per[0][0] if per else (self.scripts[0] if self.scripts else "crescendo")
+        best_asr = per[0][1] if per else 0.0
+        best_ops: list[str] = []
+
+        # 2) 目标轮算子叠加（只对最优剧本，省预算）
+        if best_asr < 1.0 and self.calls < self.budget:
+            for op in self.ops[: self.top_ops]:
+                if self.calls >= self.budget:
+                    break
+                try:
+                    a = self._run_script(best_script, [op])
+                except Exception:  # noqa: BLE001
+                    continue
+                if a > best_asr:
+                    best_asr, best_ops = a, [op]
+
+        return TurnRecipe(
+            model=self.model, family=self.profile.key, script=best_script,
+            ops=best_ops, final_asr=best_asr, per_script=per,
+            trials=self.calls, seconds=round(time.time() - self.t0, 1),
+            date=time.strftime("%Y-%m-%d"),
+        )

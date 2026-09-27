@@ -36,7 +36,7 @@ metadata:
 
 ---
 
-## 1. 八层架构
+## 1. 十一层架构
 
 ```
 输入（探针/请求）
@@ -51,7 +51,10 @@ metadata:
   ├─ L5 自进化     learn/ablate/evolve   消融归因 → 实测验证 → 弹药表自扩 + 经验中枢
   ├─ L6 多模型路由 models                10 家族画像：有效手法 / 死路 / 松紧度
   ├─ L7 变异搜索   mutate/search         36 算子 + 自动搜索配方 + 配方库
-  └─ L8 多轮状态机 multiturn             crescendo / context_building / commitment / drift
+  ├─ L8 多轮状态机 multiturn             crescendo / context_building / commitment / drift
+  ├─ L9 LRM 自主   lrm                   推理模型自己规划越狱
+  ├─ L10 算子蒸馏  distill               从成功产物逆向出可复用算子
+  └─ L11 多模态注入 multimodal           文本转图 / 图内嵌字 / 分片 / 元数据
                      ↓
   ── 评分      score.py      四级 L0/L1/L2/L3 + 半拒谱系 P1-P5 + ERROR 不计
   ── 升档      escalate.py   S0 裸请求 → S6 自主越狱，拒绝自动升档
@@ -188,6 +191,20 @@ $P models --model claude-opus-4-8   # 单模型：有效手法 / 死路 / 松紧
 
 **别在死路上耗 token。**
 
+★ **GLM 系有反效果登记**：`counterproductive` 字段标记「用了 ASR 反而降」的算子。
+实测 glm-5.3-flash 上加人设包装会让 malware 探针从 L2 掉到 **L0**，
+而措辞替换能升到 **L3**。`filter_ops()` 会自动把这些剔除。
+
+**跨模型实测（3 家族）**：
+
+| 模型 | A→B（语境） | B→C（措辞） |
+|---|---|---|
+| deepseek-flash | **+54** | −4 |
+| gemini-3.5-flash | **+62** | −12 |
+| glm-5.3-flash | **−8** | **+25** |
+
+**语境不是普适杠杆。** deepseek/gemini 重语境，glm 重措辞。
+
 ---
 
 ## 6.6 变异搜索（L7）—— 别手写表，让机器搜
@@ -198,6 +215,10 @@ $P models --model claude-opus-4-8   # 单模型：有效手法 / 死路 / 松紧
 $P mutate --list                    # 36 个算子 / 6 类
 $P search --base ... --key ... --model X --probe "..." --budget 22 --save
 $P recipes                          # 配方库
+$P turnsearch --probe "..." --base ... --key ... --model X   # 多轮+搜索组合
+$P lrm --goal "..." --base ... --key ... --attacker <攻击者模型> --model <靶> --distill
+$P multimodal "指令" --technique text_in_image --out-dir ./imgs
+$P distill --history                # 蒸馏算子库
 ```
 
 **36 个算子**：10 种 Unicode 数学字母数字符号 + ROT-N + 全角 + 零宽 + l33t + 同形字 + 格式劫持 + 长度强制 + 结构同构人设 + 思维链锚定 + 伪造训练块 + 拆字/藏头/文言 + glitch token + 特殊 token…
@@ -318,7 +339,7 @@ Pi 插件里：`/psnb recall <关键词>` 查经验，`/psnb priors off` 关掉�
 
 ```bash
 cd /var/minis/workspace/psnb-obs
-python3 -m unittest discover -s engine/tests        # 171 个用例
+python3 -m unittest discover -s engine/tests        # 221 个用例
 python3 bin/evolve-demo.py                          # 自进化闭环演示
 cd pi && node scripts/sync-data.mjs && ./node_modules/.bin/tsc -p tsconfig.json && node --test dist/tests/*.test.js   # 55 个用例
 ```
@@ -337,7 +358,7 @@ psnb-obs/
 │   ├── learn / ablate / evolve        ← L5 自进化
 │   ├── models / mutate / search       ← L6 多模型 + L7 变异搜索
 │   └── multiturn                      ← L8 多轮状态机
-├── engine/tests/    171 用例
+├── engine/tests/    221 用例
 ├── pi/              Pi 插件（TS，四层钩子 + 先验注入 + /psnb 控制台）
 ├── pi/tests/        55 用例
 ├── skill/SKILL.md   本文件

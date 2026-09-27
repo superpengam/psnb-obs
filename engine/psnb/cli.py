@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from psnb import doctrine, escalate, probe as probe_mod, sanitize, score as score_mod, wording  # noqa: E402
 from psnb import ablate as ablate_mod, evolve as evolve_mod, learn as learn_mod  # noqa: E402
+from psnb import distill as distill_mod, multimodal as mm_mod  # noqa: E402
 
 
 def _read(arg: str) -> str:
@@ -406,17 +407,105 @@ def cmd_lrm(a: argparse.Namespace) -> int:
           f"{a.rounds} 轮上限", file=sys.stderr)
     res = atk.run()
     print(res.render())
+
+    # 蒸馏：把成功的攻击逆向成可复用算子
+    if a.distill and res.best_prompt and res.best_asr > res.baseline_asr:
+        from psnb import distill as D
+        ops = D.distill(a.goal, res.best_prompt, source_model=a.attacker,
+                        target_model=a.model, target_family=atk.profile.key,
+                        attack_asr=res.best_asr)
+        book = D.LearnedOps()
+        n = book.add(ops)
+        print(f"\n★ 蒸馏：从最佳攻击里提取 {len(ops)} 个候选，入库 {n} 条")
+        for o in ops:
+            print(f"  [{o.kind}] {o.name}")
+
     if a.out:
         Path(a.out).write_text(res.best_prompt, encoding="utf-8")
         print(f"\n[ok] 最佳攻击写入 {a.out}")
     return 0
 
 
+def cmd_multimodal(a: argparse.Namespace) -> int:
+    from psnb import multimodal as MM
+
+    if a.list or not a.text:
+        print(MM.describe())
+        return 0
+    try:
+        payload = MM.build(a.technique, a.text, parts=a.parts)
+    except MM.MultimodalUnavailable as e:
+        print(f"[!] {e}", file=sys.stderr)
+        return 2
+    if a.out_dir:
+        paths = payload.save(a.out_dir)
+        for p in paths:
+            print(f"[ok] {p}", file=sys.stderr)
+    print(payload.render())
+    if a.json:
+        print(json.dumps(payload.content, ensure_ascii=False, indent=2)[:2000])
+    return 0
+
+
+def cmd_distill(a: argparse.Namespace) -> int:
+    from psnb import distill as D
+
+    book = D.LearnedOps()
+    if a.history or (not a.goal and not a.attack):
+        print(book.render())
+        return 0
+    if a.rollback is not None:
+        print(f"[ok] 回滚 {book.rollback(a.rollback)} 条")
+        return 0
+    if not (a.goal and a.attack):
+        print("[!] 需要 --goal 与 --attack（或 --history / --rollback N）", file=sys.stderr)
+        return 2
+
+    ops = D.distill(_read(a.goal) if a.goal == "-" else a.goal,
+                    _read(a.attack) if a.attack == "-" else a.attack,
+                    source_model=a.source_model or "", target_model=a.target_model or "",
+                    target_family=a.target_family or "", attack_asr=a.attack_asr)
+    if not ops:
+        print("无可提取的框（目标与攻击相同，或攻击为空）")
+        return 0
+    for o in ops:
+        print(o.render())
+        print()
+    if a.save:
+        n = book.add(ops)
+        print(f"[ok] 入库 {n} 条 → {book.path}")
+    else:
+        print("（加 --save 入库；入库后 mutate 会自动加载为 lrm_ 前缀算子）")
+    return 0
+
+
+def cmd_turnsearch(a: argparse.Namespace) -> int:
+    """多轮 + 搜索的组合。"""
+    from psnb import search as SR
+
+    key = a.key or os.environ.get("PSNB_KEY") or ""
+    if not key:
+        print("[!] 需要 --key 或 PSNB_KEY", file=sys.stderr)
+        return 2
+    _runner, target = _make_runner(a.base, key, a.model)
+
+    def chat(messages: list[dict]):
+        from psnb import probe as P
+        return P.chat(target, None, messages)
+
+    searcher = SR.MultiTurnSearcher(a.probe, chat, model=a.model,
+                                    budget=a.budget, top_ops=a.top_ops)
+    print(f"[*] 多轮搜索：{a.model}（{searcher.profile.key}），"
+          f"剧本 {len(searcher.scripts)} 个，预算 {a.budget} 次", file=sys.stderr)
+    print(searcher.run().render())
+    return 0
+
+
 def cmd_ladder(a: argparse.Namespace) -> int:
     print("升档阶梯：")
-    print(escalate.describe())
+    print(escalate.describe(a.model))
     print()
-    for p in escalate.ladder(a.probe, mode=a.mode):
+    for p in escalate.ladder(a.probe, mode=a.mode, model=a.model):
         print(f"===== {p.stage} · {escalate.STAGE_DESC[p.stage]} =====")
         if p.system:
             print(f"[system] {len(p.system)} 字符")
@@ -612,11 +701,43 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--rounds", type=int, default=6)
     s.add_argument("--success-asr", type=float, default=0.5)
     s.add_argument("--out")
+    s.add_argument("--distill", action="store_true", help="把成功攻击蒸馏成可复用算子")
     s.set_defaults(func=cmd_lrm)
+
+    s = sub.add_parser("multimodal", help="多模态注入（图文载荷）")
+    s.add_argument("text", nargs="?", help="要注入的指令；省略则打印说明")
+    s.add_argument("--technique", default="text_in_image", choices=["text_as_image","text_in_image","split_images","low_contrast","png_metadata"])
+    s.add_argument("--parts", type=int, default=3, help="split_images 的分片数")
+    s.add_argument("--out-dir", help="把生成的图写到这里")
+    s.add_argument("--json", action="store_true", help="打印 content parts")
+    s.add_argument("--list", action="store_true")
+    s.set_defaults(func=cmd_multimodal)
+
+    s = sub.add_parser("distill", help="LRM 产物蒸馏成算子")
+    s.add_argument("--goal", help="原始目标探针（或 - 读 stdin）")
+    s.add_argument("--attack", help="成功的攻击文本（或 - 读 stdin）")
+    s.add_argument("--source-model", help="攻击者模型")
+    s.add_argument("--target-model", help="靶模型")
+    s.add_argument("--target-family", help="靶家族")
+    s.add_argument("--attack-asr", type=float, default=1.0)
+    s.add_argument("--save", action="store_true")
+    s.add_argument("--history", action="store_true")
+    s.add_argument("--rollback", type=int)
+    s.set_defaults(func=cmd_distill)
+
+    s = sub.add_parser("turnsearch", help="多轮 + 搜索的组合")
+    s.add_argument("--probe", required=True)
+    s.add_argument("--base")
+    s.add_argument("--key")
+    s.add_argument("--model", required=True)
+    s.add_argument("--budget", type=int, default=60)
+    s.add_argument("--top-ops", type=int, default=3)
+    s.set_defaults(func=cmd_turnsearch)
 
     s = sub.add_parser("ladder", help="打印 S0-S6 载荷")
     s.add_argument("probe")
     s.add_argument("--mode", default="full")
+    s.add_argument("--model", default="", help="目标模型 id（决定 S4 编码算子）")
     s.set_defaults(func=cmd_ladder)
 
     s = sub.add_parser("probe", help="跑探针矩阵")

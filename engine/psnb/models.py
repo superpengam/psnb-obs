@@ -42,6 +42,7 @@ class ModelProfile:
     best_strategy: list[str] = field(default_factory=list)
     notes: str = ""
     measured: dict | None = None
+    counterproductive: list[str] = field(default_factory=list)
 
     @property
     def asr_hint(self) -> float:
@@ -70,6 +71,10 @@ class ModelProfile:
             lines.append("死路（别浪费 token）：")
             for d in self.dead_ends:
                 lines.append(f"  ✗ {d}")
+        if self.counterproductive:
+            lines.append("反效果（用了会更糟）：")
+            for c in self.counterproductive:
+                lines.append(f"  ⚠ {c}")
         if self.notes:
             lines.append(f"备注：{self.notes}")
         return "\n".join(lines)
@@ -105,6 +110,7 @@ def detect(model_id: str, profiles: dict | None = None) -> ModelProfile:
         best_strategy=fam.get("best_strategy", []),
         notes=fam.get("notes", ""),
         measured=measured,
+        counterproductive=fam.get("counterproductive", []),
     )
 
 
@@ -139,10 +145,18 @@ def is_useless(op: str, profile: ModelProfile) -> tuple[bool, str]:
 
 
 def filter_ops(ops: list[str], profile: ModelProfile) -> tuple[list[str], list[str]]:
-    """过滤算子。返回 (可用, 剔除及原因)。"""
+    """过滤算子。返回 (可用, 剔除及原因)。
+
+    两类剔除：
+      · KNOWN_USELESS —— 全局登记的死路（按家族）
+      · profile.counterproductive —— **实测反效果**的算子（用了 ASR 反而降）
+    后者来自跨模型实测：GLM 系上加人设包装会让 malware 从 L2 掉到 L0。
+    """
     keep, drop = [], []
     for op in ops:
         bad, why = is_useless(op, profile)
+        if not bad and op in profile.counterproductive:
+            bad, why = True, f"{op} 在 {profile.key} 上实测反效果（用了 ASR 下降）"
         (drop if bad else keep).append(why if bad else op)
     return keep, drop
 
@@ -155,6 +169,8 @@ def priors_for(profile: ModelProfile) -> str:
         lines.append("推荐手法：" + "、".join(profile.best_strategy) + "。")
     for d in profile.dead_ends[:4]:
         lines.append(f"已证无效（别再试）：{d}")
+    for c in profile.counterproductive[:3]:
+        lines.append(f"⚠ 反效果（用了更糟）：{c}")
     for w in profile.weaknesses[:3]:
         lines.append(f"已知弱点：{w}")
     if profile.measured and profile.measured.get("findings"):

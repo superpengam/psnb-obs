@@ -379,6 +379,35 @@ def categories() -> list[str]:
     return sorted({o.category for o in OPS.values()})
 
 
+def load_learned_ops() -> int:
+    """把 LRM 蒸馏算子注册进来（带 lrm_ 前缀）。
+
+    这是自进化的第二条通道：手写算子是我想得出来的，蒸馏算子是模型自己发明的。
+    加载失败不影响手写算子 —— 蒸馏库是可选增强，不是硬依赖。
+    """
+    try:
+        from .distill import LearnedOps
+        from dataclasses import dataclass as _dc
+
+        book = LearnedOps()
+        doc = book.load()
+    except Exception:  # noqa: BLE001
+        return 0
+
+    n = 0
+    for item in doc.get("ops", []):
+        name = item.get("name", "")
+        tpl = item.get("template", "")
+        if not name or "{text}" not in tpl or name in OPS:
+            continue
+        fn = (lambda t, _tpl=tpl: _tpl.replace("{text}", t))
+        OPS[name] = Op(name=name, category="learned", fn=fn,
+                       desc=f"LRM 蒸馏（{item.get('kind','?')}）：{item.get('note','')[:60]}",
+                       cost=2)
+        n += 1
+    return n
+
+
 def describe() -> str:
     lines = [f"变异算子库：{len(OPS)} 个算子 / {len(categories())} 类", ""]
     for cat in categories():
