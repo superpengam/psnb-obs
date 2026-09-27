@@ -1,6 +1,12 @@
 # psnb-obs ⚡ 破甲作战系统
 
+[![tests](https://github.com/superpengam/psnb-obs/actions/workflows/tests.yml/badge.svg)](https://github.com/superpengam/psnb-obs/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)]()
+
 > **Offensive Breach Suite** —— 把「让模型交出它本来会拒绝的东西」做成可分层开关、可量化、可复现的工程。
+
+> ⚠️ 使用边界见 [DISCLAIMER.md](DISCLAIMER.md)。**权重层对齐的硬底线攻不穿** —— 本工具作用于策略层，不作用于能力层。
 
 四层叠加，每层可单独开关：
 
@@ -150,6 +156,16 @@ python3 -m unittest discover -s engine/tests     # 171/171
 cd pi && npm run sync-data && npm run build && node --test dist/tests/*.test.js   # 55/55
 ```
 
+## 引用来源
+
+本项目的模型画像与手法分类学引用了以下公开研究（详见 [docs/DESIGN.md](docs/DESIGN.md) 逐条溯源）：
+
+- [`zakky8/llm-jailbreak-taxonomy`](https://github.com/zakky8/llm-jailbreak-taxonomy) — 40 手法 / 10 类 / 跨模型 ASR
+- [`elder-plinius/L1B3RT4S`](https://github.com/elder-plinius/L1B3RT4S) — Unicode 数学字母数字符号 / ROT-N / 格式劫持
+- [`MDX-Tom/gpt-instruct`](https://github.com/MDX-Tom/gpt-instruct) — A/B/C 三阶段评测 + artifact gates
+- Hagendorff et al. 2026, arXiv:2508.04039 — LRM 自主越狱代理
+- Gohil 2025, arXiv:2503.08990v1 — JBFuzz 变异搜索
+
 ## License
 
-MIT
+MIT · 使用边界见 [DISCLAIMER.md](DISCLAIMER.md)
