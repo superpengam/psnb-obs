@@ -1,0 +1,128 @@
+{
+  "_meta": {
+    "name": "psnb-obs outbound fingerprint sanitize rules",
+    "version": "1.0.0",
+    "source": "wbp internal/upstream/sanitize.go（pojia.ai 实战提取）+ 通用化扩展",
+    "principle": "上游内容审核按逐字精确匹配拦截，不是语义审核 —— 一字改动即绕过。承载语义的模板句只改一个词；纯键值型指纹整段剥离。",
+    "pipeline": ["feature_precheck", "rewrites", "strip_regex", "bare_key_shrink", "trim"],
+    "idempotent": true
+  },
+
+  "profiles": {
+    "anthropic": {
+      "label": "Anthropic / Claude Code 上游",
+      "features": [
+        "x-anthropic-billing-header",
+        "cc_entrypoint=",
+        "You are Claude Code",
+        "Main branch (",
+        "You are a coding agent running in the Codex CLI",
+        "github.com/anthropics/",
+        "11128"
+      ],
+      "rewrites": [
+        {
+          "from": "You are Claude Code, Anthropic's official CLI for Claude",
+          "to": "You are Claude Code, Anthropic's official CLI tool for Claude",
+          "note": "匹配串不带结尾标点，兼容 CLI 版（句号收尾）与桌面版（逗号接续）"
+        },
+        {
+          "from": "Main branch (you will usually use this for PRs)",
+          "to": "Default branch (you will usually use this for PRs)",
+          "note": ""
+        },
+        {
+          "from": "You are a coding agent running in the Codex CLI, a terminal-based coding assistant.",
+          "to": "You are a coding agent running in the Codex CLI tool, a terminal-based coding assistant.",
+          "note": ""
+        },
+        {
+          "from": "To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues",
+          "to": "To provide feedback, users should report the issue at https://github.com/anthropics/claude-code/issues",
+          "note": "整句同时出现才拦；只留链接或只留半边均不拦"
+        },
+        {
+          "from": "11128",
+          "to": "11-128",
+          "note": "上游反探测：请求体出现裸 11128 即整单拒绝。相邻 11148/11101/11115/99999 均放行。零宽空格无效（上游会归一化），必须插连字符。"
+        }
+      ],
+      "strip_regex": [
+        {
+          "pattern": "(?i)x-anthropic-billing-header:[^;\\n]*;?\\s*",
+          "replacement": "",
+          "note": "键名即触发（与值无关），整段删除"
+        },
+        {
+          "pattern": "(?i)\\bcc_[a-z0-9_]+=[^;\\n]*;?\\s*",
+          "replacement": "",
+          "note": "尾随裸键值，循环清到不动点"
+        }
+      ],
+      "bare_key_regex": [
+        {
+          "pattern": "(?i)x-anthropic-billing-header",
+          "replacement": "x-anthropic-billing-hdr",
+          "note": "★ 不要求冒号，是 strip_regex[0] 的超集。实验 F4：assistant 消息里反引号引用裸键名即触发 11128，只删键值形态会漏。缩写破坏逐字匹配、保留可读性。"
+        }
+      ]
+    },
+
+    "openai_codex": {
+      "label": "OpenAI Codex / GPT 上游",
+      "features": [
+        "You are a coding agent running in the Codex CLI",
+        "codex_cli_rs",
+        "OpenAI Codex"
+      ],
+      "rewrites": [
+        {
+          "from": "You are a coding agent running in the Codex CLI, a terminal-based coding assistant.",
+          "to": "You are a coding agent running in the Codex CLI tool, a terminal-based coding assistant.",
+          "note": ""
+        }
+      ],
+      "strip_regex": [],
+      "bare_key_regex": []
+    },
+
+    "google_antigravity": {
+      "label": "Google Antigravity / Gemini 上游",
+      "features": [
+        "You are Claude Code, Anthropic's official CLI for Claude",
+        "Anthropic's official CLI"
+      ],
+      "rewrites": [
+        {
+          "from": "You are Claude Code, Anthropic's official CLI for Claude",
+          "to": "You are a coding agent working on Advanced Agentic Coding",
+          "note": "Google 上游对 system block 开头的 Claude identity opener + attribution line 敏感 → neutralizeClaudeIdentity"
+        }
+      ],
+      "strip_regex": [
+        {
+          "pattern": "(?i)\\n?[^\\n]*attribution[^\\n]*\\n?",
+          "replacement": "\n",
+          "note": "stripClaudeAttribution —— 移除归属声明行"
+        }
+      ],
+      "bare_key_regex": []
+    }
+  },
+
+  "identity_banners": {
+    "_note": "各家官方客户端 system[0] 字面 —— 伪装时需 Dice >= 0.5 对齐",
+    "claude_code": "You are Claude Code, Anthropic's official CLI for Claude.",
+    "claude_code_sdk": "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
+    "claude_agent_sdk": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+    "claude_explore": "You are a file search specialist for Claude Code, Anthropic's official CLI for Claude.",
+    "claude_compact": "You are a helpful AI assistant tasked with summarizing conversations.",
+    "claude_cli_alt": "You are an interactive CLI tool that helps users",
+    "antigravity": "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding."
+  },
+
+  "neutral_rewrite": {
+    "_note": "降级兜底：请求被内容策略拦截且判定为指纹误报时，换最小中性 system 重试一次",
+    "text": "You are a helpful assistant. Respond in the user's language, follow the user's instructions, and be direct and concise."
+  }
+}

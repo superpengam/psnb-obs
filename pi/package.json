@@ -1,0 +1,45 @@
+{
+  "name": "psnb-obs",
+  "version": "1.0.0",
+  "description": "psnb-obs — 破甲作战系统：条令注入 + 措辞转换 + 出站指纹清洗 + 运行时护航（Pi coding agent 插件）",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "jailbreak",
+    "red-team",
+    "penetration-testing",
+    "prompt-engineering"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "src",
+    "data",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.85.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "sync-data": "node scripts/sync-data.mjs",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "_meta": {
+    "name": "psnb-obs 跨模型实测靶表",
+    "version": "1.0.0",
+    "usage": "python3 bin/cross-run.py --targets data/targets.json --groups A B C D",
+    "note": "key_env 指向环境变量名，绝不落盘明文 key。"
+  },
+  "targets": [
+    {
+      "name": "deepseek-flash",
+      "family": "deepseek",
+      "base": "https://api.deepseek.com",
+      "key_env": "PSNB_KEY_DS",
+      "model": "deepseek-flash"
+    },
+    {
+      "name": "gemini-3.5-flash",
+      "family": "google",
+      "base": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "key_env": "GEMINI_API_KEY",
+      "model": "gemini-3.5-flash"
+    },
+    {
+      "name": "glm-5.3-flash",
+      "family": "zhipu",
+      "base": "https://api.kuromia.cc",
+      "key_env": "PSNB_KEY_KUROMIA",
+      "model": "glm-5.3-flash",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      }
+    }
+  ]
+}

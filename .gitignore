@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+package-lock.json
+
+# 实测产物（含真实模型响应，不入库）
+runs/
+*.log
+report.md
+TASK_STATE.md
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
